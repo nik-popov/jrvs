@@ -24,6 +24,24 @@ function getToken(): string {
 const authHeaders = (token: string): HeadersInit | undefined =>
   token ? { Authorization: `Bearer ${token}` } : undefined;
 
+/**
+ * Safari/WebKit's echo cancellation does not reference audio played via Web
+ * Audio, so the mic hears JRVS's own TTS. That echo constantly triggered the
+ * SDK's barge-in interrupt (audio cutting out mid-sentence) and re-transcribed
+ * JRVS's voice as user speech — a feedback loop of echo, stutter, and runaway
+ * turns. On WebKit we run half-duplex: the mic is muted while JRVS speaks.
+ * (All iOS browsers are WebKit, so they need it too.)
+ */
+const IS_WEBKIT_AUDIO = (() => {
+  const ua = navigator.userAgent;
+  const isIOS =
+    /iPad|iPhone|iPod/.test(ua) ||
+    (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  const isSafari =
+    /safari/i.test(ua) && !/chrome|chromium|crios|fxios|edg|opr/i.test(ua);
+  return isIOS || isSafari;
+})();
+
 interface BoardEntry {
   name: string;
   labels: string;
@@ -123,10 +141,32 @@ function App() {
   } = useVoiceAgent({
     agent: "jarvis-agent",
     name: "main",
-    query: token ? { token } : undefined
+    query: token ? { token } : undefined,
+    // WebKit: echo from TTS leaks into the mic (see IS_WEBKIT_AUDIO). Make
+    // barge-in require sustained, clearly-above-echo input so residual leak
+    // during mute/unmute transitions can't cut playback.
+    ...(IS_WEBKIT_AUDIO ? { interruptThreshold: 0.15, interruptChunks: 5 } : {})
   });
 
   const isInCall = status !== "idle";
+
+  // Half-duplex for WebKit: auto-mute the mic while JRVS is speaking (a muted
+  // mic sends nothing and skips level processing, so echo can neither
+  // interrupt playback nor start a phantom user turn). The user's own mute
+  // intent is tracked separately and always wins.
+  const [userMuted, setUserMuted] = useState(false);
+  useEffect(() => {
+    if (!IS_WEBKIT_AUDIO || !isInCall) return;
+    const shouldMute = userMuted || status === "speaking";
+    if (isMuted !== shouldMute) toggleMute();
+  }, [status, userMuted, isMuted, isInCall, toggleMute]);
+
+  const handleToggleMute = useCallback(() => {
+    setUserMuted((m) => !m);
+    // Non-WebKit: the SDK mute is driven directly; WebKit reconciles in the
+    // effect above.
+    if (!IS_WEBKIT_AUDIO) toggleMute();
+  }, [toggleMute]);
 
   // Auto-scroll transcript
   useEffect(() => {
@@ -245,8 +285,12 @@ function App() {
             : "click or press space to talk"}
         </div>
         {isInCall && (
-          <button type="button" className="ghost-btn mute" onClick={toggleMute}>
-            {isMuted ? "unmute mic" : "mute mic"}
+          <button
+            type="button"
+            className="ghost-btn mute"
+            onClick={handleToggleMute}
+          >
+            {(IS_WEBKIT_AUDIO ? userMuted : isMuted) ? "unmute mic" : "mute mic"}
           </button>
         )}
       </main>
