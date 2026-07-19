@@ -1,0 +1,47 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "jrvs",
+  "compatibility_date": "2026-06-11",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "src/server.ts",
+  "vars": {
+    // Non-reasoning model with NATIVE function calling: llama-3.3 emits tool
+    // calls as literal JSON text (spoken aloud!); reasoning models (glm/qwen)
+    // can emit zero speakable text. Scout does neither.
+    "WORKERS_AI_MODEL": "@cf/meta/llama-4-scout-17b-16e-instruct"
+  },
+  "version_metadata": {
+    // D1 blueprint: lets the agent detect new deployments (deployment_tx).
+    "binding": "CF_VERSION_METADATA"
+  },
+  "ai": {
+    "binding": "AI",
+    // Voice models (STT/TTS) run remotely even during local dev.
+    // Requires `wrangler login` (or CLOUDFLARE_API_TOKEN). Set to false
+    // only if you need to boot the UI without Cloudflare credentials.
+    "remote": false
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "JarvisAgent",
+        "name": "JarvisAgent"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "new_sqlite_classes": ["JarvisAgent"],
+      "tag": "v1"
+    }
+  ],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    // Agent WebSocket/API traffic must hit the Worker (and its auth gate) first;
+    // /auth/* carries the Google OAuth callback
+    "run_worker_first": ["/agents/*", "/auth/*"]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
