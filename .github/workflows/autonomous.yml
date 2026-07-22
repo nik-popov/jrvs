@@ -1,0 +1,74 @@
+name: Autonomous ship
+
+# Fully autonomous self-improvement loop:
+#   JRVS files an issue -> Copilot coding agent opens a PR on a `copilot/*`
+#   branch -> this workflow type-checks and builds it -> if green, it
+#   auto-merges and deploys to Cloudflare. No human step. The build gate is
+#   the only guard: code that does not compile never ships.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Merging PRs and deleting branches needs write access to both.
+permissions:
+  contents: write
+  pull-requests: write
+
+# Never deploy two versions at once; let an in-flight deploy finish.
+concurrency:
+  group: ship-main
+  cancel-in-progress: false
+
+jobs:
+  ship:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # --- Quality gate: broken code stops here, never merges, never ships ---
+      - name: Type-check
+        run: npm run check
+
+      - name: Build
+        run: npm run build
+
+      # --- Autonomously merge Copilot's PR once it is green ---
+      - name: Auto-merge Copilot PR
+        if: >-
+          github.event_name == 'pull_request' &&
+          startsWith(github.head_ref, 'copilot/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr merge ${{ github.event.pull_request.number }} --squash --delete-branch
+
+      # After the merge above, move the runner onto the updated main so the
+      # deploy step ships exactly what landed. (A GITHUB_TOKEN merge does not
+      # retrigger workflows, so we deploy inline here.)
+      - name: Sync to merged main
+        if: >-
+          github.event_name == 'pull_request' &&
+          startsWith(github.head_ref, 'copilot/')
+        run: |
+          git fetch origin main
+          git checkout main
+          git reset --hard origin/main
+
+      # --- Deploy: on any push to main, or right after auto-merging Copilot ---
+      - name: Deploy to Cloudflare
+        if: >-
+          github.event_name == 'push' ||
+          (github.event_name == 'pull_request' && startsWith(github.head_ref, 'copilot/'))
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npm run deploy

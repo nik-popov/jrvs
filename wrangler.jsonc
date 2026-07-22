@@ -1,6 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "jrvs",
+  "account_id": "aa2f6aae69e7fb4bd8e2cd4311c411cb",
   "compatibility_date": "2026-06-11",
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
