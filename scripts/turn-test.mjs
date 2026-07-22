@@ -3,12 +3,14 @@
  * Opens the voice WebSocket, sends a text_message, prints transcript/error
  * events. Verifies Phase 1 (reply produced) and Phase 4 (SUGGEST_SOURCE path).
  * Usage: node scripts/turn-test.mjs "message" [timeoutSeconds]
+ *        JRVS_HOST=localhost:5173 node scripts/turn-test.mjs "message"
  */
-const HOST = "jrvs.apis-popov.workers.dev";
+const HOST = process.env.JRVS_HOST ?? "jrvs.apis-popov.workers.dev";
 const msg = process.argv[2] ?? "hello";
 const timeoutS = Number(process.argv[3] ?? 45);
 
-const ws = new WebSocket(`wss://${HOST}/agents/jarvis-agent/main`);
+const scheme = HOST.startsWith("localhost") || HOST.startsWith("127.") ? "ws" : "wss";
+const ws = new WebSocket(`${scheme}://${HOST}/agents/jarvis-agent/main`);
 const timer = setTimeout(() => {
   console.log("TIMEOUT: no assistant transcript within", timeoutS, "s");
   ws.close();

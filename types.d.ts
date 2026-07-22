@@ -13,12 +13,22 @@ declare namespace Cloudflare {
     ANTHROPIC_API_KEY?: string;
     /** Optional Claude model override. Default: claude-haiku-4-5 */
     CLAUDE_MODEL?: string;
-    /** Optional Workers AI model override. Default: @cf/zai-org/glm-4.7-flash */
+    /** Optional Workers AI model override. Default: @hf/nousresearch/hermes-2-pro-mistral-7b */
     WORKERS_AI_MODEL?: string;
+    /** Optional Workers AI fallback model (used only if the primary throws). Default: @cf/qwen/qwen2.5-coder-32b-instruct */
+    WORKERS_AI_FALLBACK_MODEL?: string;
     /** Optional Google OAuth client id (wrangler secret put GOOGLE_CLIENT_ID). Enables Gmail/Calendar tools. */
     GOOGLE_CLIENT_ID?: string;
     /** Optional Google OAuth client secret (wrangler secret put GOOGLE_CLIENT_SECRET). */
     GOOGLE_CLIENT_SECRET?: string;
+    /** Optional Telegram bot token for 24/7 notifications (wrangler secret put TELEGRAM_BOT_TOKEN). */
+    TELEGRAM_BOT_TOKEN?: string;
+    /** Optional Telegram chat id that receives notifications (wrangler secret put TELEGRAM_CHAT_ID). */
+    TELEGRAM_CHAT_ID?: string;
+    /** Optional GitHub token with issues:write for the feature-request channel (wrangler secret put GITHUB_TOKEN). */
+    GITHUB_TOKEN?: string;
+    /** Repo where JRVS files its feature requests, "owner/repo" (wrangler.jsonc vars). */
+    GITHUB_REPO?: string;
     /** Deployment version metadata (wrangler.jsonc version_metadata binding). */
     CF_VERSION_METADATA?: WorkerVersionMetadata;
   }

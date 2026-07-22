@@ -34,15 +34,20 @@ npm run deploy
 | `JARVIS_TOKEN` | recommended | Access token gating all agent traffic. Set it, then enter the same value in the app's settings panel. |
 | `ANTHROPIC_API_KEY` | optional | Use Claude for reasoning instead of Workers AI. |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | optional | Enables Gmail + Calendar tools. |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | optional | 24/7 notifications: reminders, deadline nudges, and the daily briefing land on Telegram even with the app closed. Create a bot with [@BotFather](https://t.me/BotFather); get your chat id from `getUpdates` after messaging the bot. |
+| `GITHUB_TOKEN` | optional | Lets JRVS file feature requests on its own repo (`GITHUB_REPO` var), assigned to the Copilot coding agent. Needs issues write access. |
 
 ```sh
 npx wrangler secret put JARVIS_TOKEN
 npx wrangler secret put ANTHROPIC_API_KEY
 npx wrangler secret put GOOGLE_CLIENT_ID
 npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put TELEGRAM_BOT_TOKEN
+npx wrangler secret put TELEGRAM_CHAT_ID
+npx wrangler secret put GITHUB_TOKEN
 ```
 
-Optional vars in wrangler.jsonc: `CLAUDE_MODEL`, `WORKERS_AI_MODEL`.
+Optional vars in wrangler.jsonc: `CLAUDE_MODEL`, `WORKERS_AI_MODEL`, `GITHUB_REPO`.
 
 ## Google (Gmail + Calendar) setup
 

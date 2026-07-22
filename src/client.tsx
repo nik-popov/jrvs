@@ -32,15 +32,24 @@ const authHeaders = (token: string): HeadersInit | undefined =>
  * turns. On WebKit we run half-duplex: the mic is muted while JRVS speaks.
  * (All iOS browsers are WebKit, so they need it too.)
  */
-const IS_WEBKIT_AUDIO = (() => {
+const [IS_IOS, IS_WEBKIT_AUDIO] = (() => {
   const ua = navigator.userAgent;
   const isIOS =
     /iPad|iPhone|iPod/.test(ua) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
   const isSafari =
     /safari/i.test(ua) && !/chrome|chromium|crios|fxios|edg|opr/i.test(ua);
-  return isIOS || isSafari;
+  return [isIOS, isIOS || isSafari] as const;
 })();
+
+/**
+ * How long the mic stays muted after JRVS stops speaking (WebKit half-duplex).
+ * Unmuting the instant status leaves "speaking" let the mic catch the tail of
+ * TTS audio still leaving the speaker — re-triggering barge-in and phantom
+ * turns (heard as stutter/cut-outs on iOS). The timer also debounces the
+ * brief status flaps between TTS sentences.
+ */
+const UNMUTE_TAIL_MS = 400;
 
 interface BoardEntry {
   name: string;
@@ -83,7 +92,7 @@ function App() {
   const [notice, setNotice] = useState<string | null>(null);
   const [overview, setOverview] = useState<Overview | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const transcriptEndRef = useRef<HTMLDivElement>(null);
+  const transcriptRef = useRef<HTMLElement>(null);
 
   const refreshOverview = useCallback(async () => {
     try {
@@ -153,12 +162,19 @@ function App() {
   // Half-duplex for WebKit: auto-mute the mic while JRVS is speaking (a muted
   // mic sends nothing and skips level processing, so echo can neither
   // interrupt playback nor start a phantom user turn). The user's own mute
-  // intent is tracked separately and always wins.
+  // intent is tracked separately and always wins. Muting is immediate;
+  // unmuting waits UNMUTE_TAIL_MS so the mic can't catch the TTS tail.
   const [userMuted, setUserMuted] = useState(false);
   useEffect(() => {
     if (!IS_WEBKIT_AUDIO || !isInCall) return;
     const shouldMute = userMuted || status === "speaking";
-    if (isMuted !== shouldMute) toggleMute();
+    if (shouldMute) {
+      if (!isMuted) toggleMute();
+      return;
+    }
+    if (!isMuted) return;
+    const timer = window.setTimeout(() => toggleMute(), UNMUTE_TAIL_MS);
+    return () => window.clearTimeout(timer);
   }, [status, userMuted, isMuted, isInCall, toggleMute]);
 
   const handleToggleMute = useCallback(() => {
@@ -168,10 +184,66 @@ function App() {
     if (!IS_WEBKIT_AUDIO) toggleMute();
   }, [toggleMute]);
 
-  // Auto-scroll transcript
+  // Auto-scroll transcript. Direct rAF-throttled scrollTop writes: a smooth
+  // scrollIntoView animation on every streamed chunk caused main-thread jank
+  // on iOS — enough to starve audio scheduling mid-turn. Only sticks to the
+  // bottom while the user hasn't scrolled up to read history.
+  const stickToBottom = useRef(true);
+  const scrollRaf = useRef(0);
+  const handleTranscriptScroll = useCallback(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    stickToBottom.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  }, []);
   useEffect(() => {
-    transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = transcriptRef.current;
+    if (!el || !stickToBottom.current) return;
+    cancelAnimationFrame(scrollRaf.current);
+    scrollRaf.current = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(scrollRaf.current);
   }, [transcript, interimTranscript]);
+
+  // Hold a screen wake lock during calls: when iOS dims or locks the screen
+  // it suspends audio and throttles the pipeline, which surfaces as mid-turn
+  // stutter or silence. Best-effort; re-acquired on return to foreground
+  // (the OS releases wake locks whenever the page is hidden).
+  useEffect(() => {
+    if (!isInCall || !("wakeLock" in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let active = true;
+    const acquire = async () => {
+      try {
+        lock = await navigator.wakeLock.request("screen");
+      } catch {
+        // denied (battery saver etc.) — cosmetic, carry on
+      }
+    };
+    const onVisibility = () => {
+      if (active && document.visibilityState === "visible") void acquire();
+    };
+    void acquire();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      active = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      void lock?.release().catch(() => {});
+    };
+  }, [isInCall]);
+
+  // iOS suspends the audio context and socket when the app is backgrounded
+  // mid-call; on return the voice pipeline is desynced (silent or garbled
+  // playback). End the call cleanly instead — one tap starts it fresh.
+  useEffect(() => {
+    if (!IS_IOS || !isInCall) return;
+    const onHidden = () => {
+      if (document.visibilityState === "hidden") endCall();
+    };
+    document.addEventListener("visibilitychange", onHidden);
+    return () => document.removeEventListener("visibilitychange", onHidden);
+  }, [isInCall, endCall]);
 
   // Spacebar toggles the call (unless typing)
   const toggleCall = useCallback(() => {
@@ -295,7 +367,11 @@ function App() {
         )}
       </main>
 
-      <section className="transcript">
+      <section
+        className="transcript"
+        ref={transcriptRef}
+        onScroll={handleTranscriptScroll}
+      >
         {transcript.length === 0 && !interimTranscript ? (
           <div className="transcript-empty">
             {connected
@@ -320,7 +396,6 @@ function App() {
             )}
           </>
         )}
-        <div ref={transcriptEndRef} />
       </section>
 
       <form className="composer" onSubmit={submitText}>

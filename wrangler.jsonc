@@ -5,10 +5,14 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
   "vars": {
-    // Non-reasoning model with NATIVE function calling: llama-3.3 emits tool
-    // calls as literal JSON text (spoken aloud!); reasoning models (glm/qwen)
-    // can emit zero speakable text. Scout does neither.
-    "WORKERS_AI_MODEL": "@cf/meta/llama-4-scout-17b-16e-instruct"
+    // Hermes 2 Pro is purpose-built for reliable native function calling and
+    // emits clean speakable text alongside tool calls. Qwen is the fallback,
+    // used only when the primary model throws (never on empty text, so a
+    // successful tool call is never re-run / double-fired).
+    "WORKERS_AI_MODEL": "@hf/nousresearch/hermes-2-pro-mistral-7b",
+    "WORKERS_AI_FALLBACK_MODEL": "@cf/qwen/qwen2.5-coder-32b-instruct",
+    // Where JRVS files its own feature requests (request_feature tool).
+    "GITHUB_REPO": "nik-popov/jrvs"
   },
   "version_metadata": {
     // D1 blueprint: lets the agent detect new deployments (deployment_tx).
@@ -17,9 +21,9 @@
   "ai": {
     "binding": "AI",
     // Voice models (STT/TTS) run remotely even during local dev.
-    // Requires `wrangler login` (or CLOUDFLARE_API_TOKEN). Set to false
-    // only if you need to boot the UI without Cloudflare credentials.
-    "remote": false
+    // Requires `wrangler login` (or CLOUDFLARE_API_TOKEN) — AI bindings
+    // have no local simulator.
+    "remote": true
   },
   "durable_objects": {
     "bindings": [
